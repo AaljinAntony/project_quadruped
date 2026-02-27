@@ -1,0 +1,31 @@
+# ROS 2 workspaces
+build/
+install/
+log/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+.venv
+env.bak/
+venv.bak/
+
+# C++
+*.o
+*.obj
+*.out
+*.exe
+*.a
+
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+.vscode/

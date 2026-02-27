@@ -1,0 +1,60 @@
+gazebo_ros2_control:
+  ros__parameters:
+    pid_gains:
+      position:
+        motor_front_left_shoulder:
+          { p: 15.0, i: 0.1, d: 0.05, max_integral_error: 1.0 }
+        motor_front_left_leg:
+          { p: 15.0, i: 0.1, d: 0.05, max_integral_error: 1.0 }
+        foot_motor_front_left:
+          { p: 15.0, i: 0.1, d: 0.05, max_integral_error: 1.0 }
+        motor_front_right_shoulder:
+          { p: 15.0, i: 0.1, d: 0.05, max_integral_error: 1.0 }
+        motor_front_right_leg:
+          { p: 15.0, i: 0.1, d: 0.05, max_integral_error: 1.0 }
+        foot_motor_front_right:
+          { p: 15.0, i: 0.1, d: 0.05, max_integral_error: 1.0 }
+        motor_rear_left_shoulder:
+          { p: 15.0, i: 0.1, d: 0.05, max_integral_error: 1.0 }
+        motor_rear_left_leg:
+          { p: 15.0, i: 0.1, d: 0.05, max_integral_error: 1.0 }
+        foot_motor_rear_left:
+          { p: 15.0, i: 0.1, d: 0.05, max_integral_error: 1.0 }
+        motor_rear_right_shoulder:
+          { p: 15.0, i: 0.1, d: 0.05, max_integral_error: 1.0 }
+        motor_rear_right_leg:
+          { p: 15.0, i: 0.1, d: 0.05, max_integral_error: 1.0 }
+        foot_motor_rear_right:
+          { p: 15.0, i: 0.1, d: 0.05, max_integral_error: 1.0 }
+
+controller_manager:
+  ros__parameters:
+    update_rate: 250
+    use_sim_time: true
+
+    joint_states_controller:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    joint_group_position_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+joint_group_position_controller:
+  ros__parameters:
+    joints:
+      - motor_front_left_shoulder
+      - motor_front_left_leg
+      - foot_motor_front_left
+      - motor_front_right_shoulder
+      - motor_front_right_leg
+      - foot_motor_front_right
+      - motor_rear_left_shoulder
+      - motor_rear_left_leg
+      - foot_motor_rear_left
+      - motor_rear_right_shoulder
+      - motor_rear_right_leg
+      - foot_motor_rear_right
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity

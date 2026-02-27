@@ -1,0 +1,30 @@
+services:
+  spotmicro_dev:
+    build: .
+    container_name: spotmicro_container
+    network_mode: "host"
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - ./src:/workspace/src
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    stdin_open: true
+    tty: true
+    command: /bin/bash
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+  microros_agent:
+    image: microros/micro-ros-agent:humble
+    container_name: spot_microros_agent
+    restart: unless-stopped
+    # network_mode: host is heavily recommended here. 
+    # It allows the Agent to easily discover your ROS 2 container via DDS, 
+    # and exposes port 8888 directly to your local Wi-Fi for the ESP32.
+    network_mode: host 
+    command: udp4 --port 8888

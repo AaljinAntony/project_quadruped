@@ -1,4 +1,4 @@
-# 🐕 Project Quadruped: Master Operations Manual
+# 🐕 Project Quadruped: Manual
 
 **Stack:** ROS 2 Humble (Docker) + Gazebo (Sim) + Micro-ROS (Real Hardware)  
 **Supported Modes:** Virtual Simulation & Physical Field Testing
@@ -39,11 +39,9 @@ sudo ./prerequisites.sh
 
 ## 🎮 Part 2
 
-Use this mode to test code logic, walking gaits, and inverse kinematics without risking hardware damage.
-
 ### 1. Launch the Environment
 
-Because Gazebo requires graphical windows (X11), use our wrapper script instead of standard Docker commands. This script authorizes the container to use your host display.
+Use our wrapper script instead of standard Docker commands. This script authorizes the container to use your host display.
 
 ```bash
 ./start.sh

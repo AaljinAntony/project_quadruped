@@ -37,7 +37,7 @@ sudo ./prerequisites.sh
 
 ---
 
-## 🎮 Part 2: Simulation Mode (Gazebo)
+## 🎮 Part 2
 
 Use this mode to test code logic, walking gaits, and inverse kinematics without risking hardware damage.
 
@@ -68,7 +68,8 @@ Inside the container:
 colcon build --symlink-install
 source install/setup.bash
 
-# Launch the Gazebo Simulation
+# Launch the Gazebo Simulation(**if needed**)
+# (the simulation robot has vibration due to gazebo physics calculations, it will not be in real robot)
 ros2 launch spotmicro_config gazebo.launch.py
 
 ```
@@ -98,7 +99,9 @@ Use this mode to control the physical robot.
 For real hardware, we need the **Micro-ROS Agent** to translate Wi-Fi packets into ROS 2 topics.
 
 ```bash
-# From the project root (Ensure start.sh or docker compose is running)
+# From the project root (spotmicro_ws)
+# (Ensure start.sh or docker compose is running)
+#(the below command is already running if you ran the start.sh script, continue with the next step)
 docker compose up -d microros_agent
 
 ```
@@ -195,10 +198,6 @@ Keyboards are "binary" (0% or 100% speed), which can make the robot jerk and fal
 * **To speed up:** Press `q` to increase speed incrementally.
 * **To stop:** Always press `k` instead of just letting go of the key.
 
-```
-
-```
-
 ---
 
 ## 🚨 Troubleshooting
@@ -208,13 +207,5 @@ Keyboards are "binary" (0% or 100% speed), which can make the robot jerk and fal
 | **Gazebo GUI crashes / "Authorization required"** | Sim | Ensure you ran `./start.sh` (not just docker compose) to run `xhost +local:root`. |
 | **Robot explodes on spawn** | Sim | Check `base_link` collision meshes. Remove `<collision>` from root dummy links. |
 | **"nvidia" runtime unknown** | Sim | Missing drivers. Run `./prerequisites.sh` or remove `deploy:` block from `docker-compose.yaml` to run CPU-only. |
-| **"Session established" missing** | Real | 1. Check Wi-Fi/IP match. <br>
-
-<br> 2. Disable Laptop Firewall. <br>
-
-<br> 3. Ensure `network_mode: host` is set in docker-compose. |
+| **"Session established" missing** | Real | 1. Check Wi-Fi/IP match. <br>2. Disable Laptop Firewall. <br>3. Ensure `network_mode: host` is set in docker-compose. |
 | **Violent Leg Jitter** | Real | PID gains are too high for physical servos. Lower the `P` gain in `ros2_controllers.yaml`. |
-
-```
-
-```

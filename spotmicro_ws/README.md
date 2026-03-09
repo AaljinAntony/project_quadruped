@@ -90,7 +90,39 @@ Use this mode to control the physical robot.
 2. Edit `main.cpp`: Update `WIFI_SSID`, `WIFI_PASS`, and `AGENT_IP` (Your Laptop's IP).
 3. Flash to ESP32.
 
+### 🔌 Sensors Setup (IMU & Ultrasonic)
 
+To give the robot balance and obstacle avoidance, we add an IMU and a Distance Sensor.
+
+#### 1. MPU6050 IMU (Gyroscope/Accelerometer)
+* **Function:** Provides balance data to keep the robot upright.
+* **Wiring (Shared I2C Bus):**
+    * **VCC:** 3.3V (Recommended) or 5V
+    * **GND:** GND
+    * **SCL:** GPIO 22 (Parallel with PCA9685)
+    * **SDA:** GPIO 21 (Parallel with PCA9685)
+* **Calibration:**
+    * The firmware auto-calibrates on boot. **DO NOT** move the robot for the first 3 seconds after powering on.
+
+#### 2. HC-SR04 Ultrasonic Sensor
+* **Function:** Detects walls/obstacles for autonomous stops.
+* **Wiring:**
+    * **VCC:** 5V
+    * **GND:** GND
+    * **Trig:** GPIO 5
+    * **Echo:** GPIO 18 
+    * *⚠️ **Safety Note:** The Echo pin outputs 5V. To protect the ESP32 (which is 3.3V), use a 1kΩ/2kΩ voltage divider on the Echo line if possible.*
+
+---
+
+### 📡 Sensor Verification
+
+Once wired and flashed, verify the data is reaching Mission Control:
+
+**1. Check IMU Data**
+Rotate the robot by hand. The orientation values should change.
+```bash
+ros2 topic echo /imu/data
 
 ### 2. Start Mission Control
 

@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
 #include <micro_ros_platformio.h>
 #include <stdio.h>
 #include <rcl/rcl.h>
@@ -8,10 +10,18 @@
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
 #include <sensor_msgs/msg/joint_state.h>
+#include <sensor_msgs/msg/imu.h>
+#include <sensor_msgs/msg/range.h>
 
 // --- HARDWARE CONFIGURATION ---
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40); // Default I2C address for PCA9685
+Adafruit_MPU6050 mpu;
+bool mpu_found = false;
+
 #define SERVO_FREQ 50 // Standard analog/digital servo frequency
+
+#define TRIG_PIN 5
+#define ECHO_PIN 18
 
 // --- NETWORK CONFIGURATION ---
 // Replace these with your actual Wi-Fi and Host machine details
@@ -54,11 +64,23 @@ JointMap joint_mapping[12] = {
 
 // --- MICRO-ROS VARIABLES ---
 rcl_subscription_t subscriber;
+rcl_publisher_t imu_publisher;
+rcl_publisher_t range_publisher;
+
 sensor_msgs__msg__JointState joint_msg;
+sensor_msgs__msg__Imu imu_msg;
+sensor_msgs__msg__Range range_msg;
+
 rclc_executor_t executor;
 rclc_support_t support;
 rcl_allocator_t allocator;
 rcl_node_t node;
+
+// --- TIMERS (Non-Blocking) ---
+unsigned long last_imu_time = 0;
+unsigned long last_range_time = 0;
+const unsigned long IMU_INTERVAL = 50;   // 20Hz
+const unsigned long RANGE_INTERVAL = 200; // 5Hz
 
 // --- MATH CONVERSION FUNCTION ---
 int radToPwmTick(float radians) {
@@ -86,9 +108,6 @@ void joint_state_callback(const void * msgin) {
           // 1. Subtract the calibration offset to zero the physical leg
           float corrected_angle_rad = msg->position.data[i] - joint_offsets[joint_mapping[j].offset_index];
           
-          // Print the received angle to the Arduino Serial Monitor
-          Serial.printf("Received Front Left Angle: %.2f rad\n", msg->position.data[0]);
-          
           // 2. Convert to PWM ticks
           int pwm_tick = radToPwmTick(corrected_angle_rad);
           
@@ -101,6 +120,61 @@ void joint_state_callback(const void * msgin) {
   }
 }
 
+// --- SENSOR READING FUNCTIONS ---
+void publish_imu_data() {
+  if (!mpu_found) return;
+
+  sensors_event_t a, g, temp;
+  mpu.getEvent(&a, &g, &temp);
+
+  // Default frame
+  imu_msg.header.frame_id.data = (char*)"imu_link";
+  imu_msg.header.frame_id.size = strlen(imu_msg.header.frame_id.data);
+
+  // Linear acceleration (m/s^2)
+  imu_msg.linear_acceleration.x = a.acceleration.x;
+  imu_msg.linear_acceleration.y = a.acceleration.y;
+  imu_msg.linear_acceleration.z = a.acceleration.z;
+
+  // Angular velocity (rad/s)
+  imu_msg.angular_velocity.x = g.gyro.x;
+  imu_msg.angular_velocity.y = g.gyro.y;
+  imu_msg.angular_velocity.z = g.gyro.z;
+
+  // Orientation is typically calculated by a Madgwick/Mahony filter on the host PC (robot_localization)
+  // We just send the raw accel/gyro data.
+  
+  rcl_publish(&imu_publisher, &imu_msg, NULL);
+}
+
+void publish_range_data() {
+  // Trigger ultrasonic sensor
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  // Read response
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000); // 30ms timeout (~5 meters max)
+  float distance_m = (duration * 0.0343) / 200.0; // convert us to meters
+
+  if (duration == 0) {
+    distance_m = 4.0; // Out of range reading
+  }
+
+  range_msg.header.frame_id.data = (char*)"ultrasonic_link";
+  range_msg.header.frame_id.size = strlen(range_msg.header.frame_id.data);
+  
+  range_msg.radiation_type = sensor_msgs__msg__Range__ULTRASOUND;
+  range_msg.field_of_view = 0.26; // ~15 degrees
+  range_msg.min_range = 0.02;     // 2 cm
+  range_msg.max_range = 4.0;      // 4 m
+  range_msg.range = distance_m;
+
+  rcl_publish(&range_publisher, &range_msg, NULL);
+}
+
 void setup() {
   Serial.begin(115200);
 
@@ -109,6 +183,22 @@ void setup() {
   pwm.setOscillatorFrequency(27000000);
   pwm.setPWMFreq(SERVO_FREQ);  
   delay(10);
+
+  // Initialize MPU6050
+  if (!mpu.begin(0x68, &Wire, 0)) {
+    Serial.println("Failed to find MPU6050 chip at address 0x68");
+    mpu_found = false;
+  } else {
+    Serial.println("MPU6050 Found!");
+    mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+    mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+    mpu_found = true;
+  }
+
+  // Initialize Ultrasonic Pins
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
 
   // Initialize Micro-ROS via Wi-Fi
   set_microros_wifi_transports(ssid, psk, agent_ip, agent_port);
@@ -126,6 +216,22 @@ void setup() {
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
     "/joint_states" 
+  );
+
+  // Create IMU Publisher
+  rclc_publisher_init_default(
+    &imu_publisher,
+    &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
+    "/imu/data"
+  );
+
+  // Create Ultrasonic Publisher
+  rclc_publisher_init_default(
+    &range_publisher,
+    &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Range),
+    "/ultrasonic/range"
   );
 
   // --- CRITICAL MEMORY ALLOCATION FOR INCOMING MESSAGES ---
@@ -151,12 +257,26 @@ void setup() {
   joint_msg.effort.data = (double*) malloc(12 * sizeof(double));
   joint_msg.effort.size = 0;
 
-  // Create Executor
+  // Create Executor (3 handles: 1 subscriber + 2 publishers but publishers don't need handles in the executor to spin, only subscribers/services/timers do )
   rclc_executor_init(&executor, &support.context, 1, &allocator);
   rclc_executor_add_subscription(&executor, &subscriber, &joint_msg, &joint_state_callback, ON_NEW_DATA);
 }
 
 void loop() {
+  unsigned long current_time = millis();
+
+  // Non-blocking IMU publish
+  if (current_time - last_imu_time >= IMU_INTERVAL) {
+    publish_imu_data();
+    last_imu_time = current_time;
+  }
+
+  // Non-blocking Ultrasonic publish
+  if (current_time - last_range_time >= RANGE_INTERVAL) {
+    publish_range_data();
+    last_range_time = current_time;
+  }
+
   // Keep the micro-ROS agent spinning to catch incoming CHAMP messages
   rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
 }

@@ -1,8 +1,9 @@
 #include <Arduino.h>
+#include <WiFi.h>
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
+// #include <Adafruit_MPU6050.h>
+// #include <Adafruit_Sensor.h>
 #include <micro_ros_platformio.h>
 #include <stdio.h>
 #include <rcl/rcl.h>
@@ -10,24 +11,28 @@
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
 #include <sensor_msgs/msg/joint_state.h>
-#include <sensor_msgs/msg/imu.h>
-#include <sensor_msgs/msg/range.h>
+// #include <sensor_msgs/msg/imu.h>
+// #include <sensor_msgs/msg/range.h>
 
 // --- HARDWARE CONFIGURATION ---
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40); // Default I2C address for PCA9685
-Adafruit_MPU6050 mpu;
-bool mpu_found = false;
+// Adafruit_MPU6050 mpu;
+// bool mpu_found = false;
 
 #define SERVO_FREQ 50 // Standard analog/digital servo frequency
 
-#define TRIG_PIN 5
-#define ECHO_PIN 18
+// #define TRIG_PIN 4
+// #define ECHO_PIN 18
 
 // --- NETWORK CONFIGURATION ---
 // Replace these with your actual Wi-Fi and Host machine details
-char ssid[] = "YOUR_WIFI_SSID";
-char psk[] = "YOUR_WIFI_PASSWORD";
-IPAddress agent_ip(192, 168, 1, 100); // The IP address of the computer running ROS 2 (update this!)
+// char ssid[] = "Angamaly Broadband 2.4ghz";
+// char psk[] = "biju@9849";
+// char ssid[] = "WE_Kaliyath _2_4G";
+// char psk[] = "nisha8182";
+char ssid[] = "Aaljin";
+char psk[] = "17082004";
+IPAddress agent_ip(10, 75, 77, 49); // The IP address of the computer running ROS 2 (update this!)
 size_t agent_port = 8888;
 
 // --- CALIBRATION OFFSETS ---
@@ -64,12 +69,12 @@ JointMap joint_mapping[12] = {
 
 // --- MICRO-ROS VARIABLES ---
 rcl_subscription_t subscriber;
-rcl_publisher_t imu_publisher;
-rcl_publisher_t range_publisher;
+// rcl_publisher_t imu_publisher;
+// rcl_publisher_t range_publisher;
 
 sensor_msgs__msg__JointState joint_msg;
-sensor_msgs__msg__Imu imu_msg;
-sensor_msgs__msg__Range range_msg;
+// sensor_msgs__msg__Imu imu_msg;
+// sensor_msgs__msg__Range range_msg;
 
 rclc_executor_t executor;
 rclc_support_t support;
@@ -77,10 +82,10 @@ rcl_allocator_t allocator;
 rcl_node_t node;
 
 // --- TIMERS (Non-Blocking) ---
-unsigned long last_imu_time = 0;
-unsigned long last_range_time = 0;
-const unsigned long IMU_INTERVAL = 50;   // 20Hz
-const unsigned long RANGE_INTERVAL = 200; // 5Hz
+// unsigned long last_imu_time = 0;
+// unsigned long last_range_time = 0;
+// const unsigned long IMU_INTERVAL = 50;   // 20Hz
+// const unsigned long RANGE_INTERVAL = 200; // 5Hz
 
 // --- MATH CONVERSION FUNCTION ---
 int radToPwmTick(float radians) {
@@ -121,6 +126,7 @@ void joint_state_callback(const void * msgin) {
 }
 
 // --- SENSOR READING FUNCTIONS ---
+/*
 void publish_imu_data() {
   if (!mpu_found) return;
 
@@ -174,36 +180,98 @@ void publish_range_data() {
 
   rcl_publish(&range_publisher, &range_msg, NULL);
 }
+*/
+
+#include <esp_wifi.h>
+#include <ESP32Ping.h>
 
 void setup() {
   Serial.begin(115200);
+  delay(1000); 
 
   // Initialize PCA9685
   pwm.begin();
   pwm.setOscillatorFrequency(27000000);
-  pwm.setPWMFreq(SERVO_FREQ);  
-  delay(10);
-
-  // Initialize MPU6050
-  if (!mpu.begin(0x68, &Wire, 0)) {
-    Serial.println("Failed to find MPU6050 chip at address 0x68");
-    mpu_found = false;
-  } else {
-    Serial.println("MPU6050 Found!");
-    mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
-    mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
-    mpu_found = true;
+  // Scan for networks
+  Serial.println("Scanning for Wi-Fi networks...");
+  int n = WiFi.scanNetworks();
+  Serial.print("Scan done, found "); Serial.print(n); Serial.println(" networks:");
+  for (int i = 0; i < n; ++i) {
+    Serial.print(WiFi.SSID(i)); Serial.print(" ("); Serial.print(WiFi.RSSI(i)); Serial.print(") ");
+    Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN)?" ":"*");
+    delay(10);
   }
 
-  // Initialize Ultrasonic Pins
-  pinMode(TRIG_PIN, OUTPUT);
-  pinMode(ECHO_PIN, INPUT);
+  // Initialize Wi-Fi
+  Serial.println("Connecting to Wi-Fi...");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, psk);
+  
+  unsigned long start_time = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start_time < 20000) {
+    delay(1000);
+    Serial.print("Status: ");
+    switch(WiFi.status()) {
+      case WL_IDLE_STATUS: Serial.println("IDLE"); break;
+      case WL_NO_SSID_AVAIL: Serial.println("NO SSID"); break;
+      case WL_SCAN_COMPLETED: Serial.println("SCAN COMPLETED"); break;
+      case WL_CONNECT_FAILED: Serial.println("CONNECT FAILED"); break;
+      case WL_CONNECTION_LOST: Serial.println("CONNECTION LOST"); break;
+      case WL_DISCONNECTED: Serial.println("DISCONNECTED"); break;
+      default: Serial.println("UNKNOWN"); break;
+    }
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nConnected! IP: "); Serial.println(WiFi.localIP());
+    // Disable sleep to improve UDP stability
+    WiFi.setSleep(false);
+    esp_wifi_set_ps(WIFI_PS_NONE);
 
-  // Initialize Micro-ROS via Wi-Fi
+    // Ping test to HOST/AGENT
+    Serial.print("Pinging Agent ("); Serial.print(agent_ip); Serial.println(")...");
+    if(Ping.ping(agent_ip)) {
+      Serial.println("Ping Success to Host!");
+    } else {
+      Serial.println("Ping Failed to Host!");
+      
+      // Try pinging Gateway
+      IPAddress gateway = WiFi.gatewayIP();
+      Serial.print("Pinging Gateway ("); Serial.print(gateway); Serial.println(")...");
+      if(Ping.ping(gateway)) {
+        Serial.println("Ping Success to Gateway! Network is OK, Host is the problem.");
+      } else {
+        Serial.println("Ping Failed to Gateway! Network is isolated or Wi-Fi is broken.");
+      }
+    }
+  } else {
+    Serial.print("\nWiFi Connection Failed! Final Status: "); Serial.println(WiFi.status());
+  }
+
+
+  // Initialize Micro-ROS transport (pointing to pre-connected WiFi)
   set_microros_wifi_transports(ssid, psk, agent_ip, agent_port);
-  delay(2000);
 
+  // ARP warmup - Send a few raw UDP packets to the agent 
+  // to make sure the ESP32 knows the agent's MAC address
+  WiFiUDP udp;
+  udp.begin(12345);
+  Serial.println("ARP Warmup (Target: 8888)...");
+  for(int i = 0; i < 3; i++){
+    udp.beginPacket(agent_ip, agent_port);
+    udp.write((uint8_t*)"HELLO", 5);
+    if(udp.endPacket()){
+      Serial.println("Packet sent OK");
+    } else {
+      Serial.println("Packet send FAILED (Error 12)");
+    }
+    delay(1000);
+  }
+  udp.stop();
+
+  Serial.println("Micro-ROS Init...");
+  delay(1000);
+  
   allocator = rcl_get_default_allocator();
 
   // Create Support and Node
@@ -219,20 +287,24 @@ void setup() {
   );
 
   // Create IMU Publisher
+  /*
   rclc_publisher_init_default(
     &imu_publisher,
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
     "/imu/data"
   );
+  */
 
   // Create Ultrasonic Publisher
+  /*
   rclc_publisher_init_default(
     &range_publisher,
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Range),
     "/ultrasonic/range"
   );
+  */
 
   // --- CRITICAL MEMORY ALLOCATION FOR INCOMING MESSAGES ---
   // Pre-allocate memory for dynamic arrays to prevent deserialization crashes!
@@ -263,19 +335,23 @@ void setup() {
 }
 
 void loop() {
-  unsigned long current_time = millis();
+  // unsigned long current_time = millis();
 
   // Non-blocking IMU publish
+  /*
   if (current_time - last_imu_time >= IMU_INTERVAL) {
     publish_imu_data();
     last_imu_time = current_time;
   }
+  */
 
   // Non-blocking Ultrasonic publish
+  /*
   if (current_time - last_range_time >= RANGE_INTERVAL) {
     publish_range_data();
     last_range_time = current_time;
   }
+  */
 
   // Keep the micro-ROS agent spinning to catch incoming CHAMP messages
   rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));

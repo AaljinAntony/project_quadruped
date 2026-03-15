@@ -29,10 +29,10 @@ struct JointMap {
 };
 
 JointMap joint_mapping[12] = {
-  {"Front Left Shoulder", 0}, {"Front Left Leg", 1}, {"Front Left Foot", 2},
-  {"Front Right Shoulder", 3}, {"Front Right Leg", 4}, {"Front Right Foot", 5},
-  {"Rear Left Shoulder", 6}, {"Rear Left Leg", 7}, {"Rear Left Foot", 8},
-  {"Rear Right Shoulder", 9}, {"Rear Right Leg", 10}, {"Rear Right Foot", 11}
+  {"FL Foot", 0}, {"FL Leg", 1}, {"FL Shoulder", 2},
+  {"BL Leg", 4}, {"BL Shoulder", 5}, {"FR Foot", 6},
+  {"FR Shoulder", 8}, {"BR Foot", 9}, {"BR Leg", 10},
+  {"BR Shoulder", 12}, {"BL Foot", 13}, {"FR Leg", 14}
 };
 
 // --- MICRO-ROS VARIABLES ---
@@ -62,7 +62,7 @@ void calib_callback(const void * msgin) {
         int pwm_tick = msg->data.data[1];
         
         if (motor_idx >= 0 && motor_idx < 12) {
-            pwm.setPWM(motor_idx, 0, pwm_tick);
+            pwm.setPWM(joint_mapping[motor_idx].pca_pin, 0, pwm_tick);
             
             float v = readVoltage();
             snprintf(status_buffer, sizeof(status_buffer), 

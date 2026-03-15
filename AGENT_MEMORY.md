@@ -35,8 +35,24 @@
 - **Gazebo UI Crashes**: Running the simulation without `./start.sh` (which handles `xhost +local:root`) leads to GUI crashes due to X11 authorization issues.
 - **Micro-ROS Agent Connection**: Requires `network_mode: host` in `docker-compose.yaml`.
 - **ESP32 Serial Monitor**: After initialization, `main.cpp` enters a loop waiting for ROS 2 messages. It will NOT print anything to the serial monitor unless there's an error or a specific print statement is triggered.
-- **CHAMP Configuration**:
-    - **Namespace Scoping**: Configurations in `joints.yaml`, `links.yaml`, and `gait.yaml` MUST be scoped under the specific node names (`quadruped_controller_node`, `state_estimation_node`) rather than a wildcard `/**` to avoid parameter loading issues.
-    - **Kinematic Chain**: CHAMP expects a 4-element structure for legs in the maps (Hip, Upper, Lower, Toe). Removing the toe elements or mapping only 3 joints can cause internal vector out-of-bounds crashes (exit code -11).
-    - **URDF Mapping**: The SpotMicro URDF path must be explicitly passed to `champ_bringup` via the `description_path` parameter in the launch file.
-- **Micro-ROS Stability**: Successfully established a bidirectional UDP session via laptop hotspot (10.42.0.1 -> 10.42.0.128). verified end-to-end movement commands producing joint trajectories.
+### Motor Control & Calibration (New Hardware Mapping)
+- **Calibration Mode**: Specialized firmware exists in `calibration_main.cpp` (currently `main.cpp` for flashing).
+  - PIN 0,1,2: FL Foot, Leg, Shoulder
+  - PIN 4,5,6: BL Leg, BL Shoulder, FR Foot
+  - PIN 8,9,10: FR Shoulder, BR Foot, BR Leg
+  - PIN 12,13,14: BR Shoulder (Assumed), BL Foot (Assumed), FR Leg (Assumed)
+  - Unused: 3, 7, 11, 15
+- **Calibrated Neutrals**:
+  - FL: {F: 377, L: 292, S: 303}
+  - RL (BL): {L: 299, S: 381}
+  - FR: {F: 285, S: 299}
+  - RR (BR): {F: 307, L: 243}
+- **Control Strategy**: 
+  - Host-side Python CLI (`scripts/motor_calibration_cli.py`) sends raw PWM ticks (approx 100-500).
+  - **Baseline**: Script resets to **300 PWM** on motor switch.
+  - **Logging**: Interactive results are logged to `/workspace/calibration_results.txt` for automated extraction.
+  - ESP32 provides feedback on `/motor_status` including battery voltage.
+
+### Known Issues & Unresolved Questions
+- **Battery Sense**: ADC pin used for voltage sensing might need specific calibration for the user's divider ratio.
+- **CHAMP Alignment**: Once calibration is done, the offsets must be transferred to the production `main.cpp`.

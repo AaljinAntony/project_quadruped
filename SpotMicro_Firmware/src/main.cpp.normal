@@ -40,10 +40,10 @@ size_t agent_port = 8888;
 // --- CALIBRATION OFFSETS ---
 // These are the values you will find using the joint_state_publisher_gui.
 float joint_offsets[12] = {
-  0.0, 0.0, 0.0, // Front Left (Shoulder, Leg, Foot)
-  0.0, 0.0, 0.0, // Front Right (Shoulder, Leg, Foot)
-  0.0, 0.0, 0.0, // Rear Left (Shoulder, Leg, Foot)
-  0.0, 0.0, 0.0  // Rear Right (Shoulder, Leg, Foot)
+  377, 292, 303, // Front Left (F, L, S) -> Based on indices 0,1,2
+  285, 299, 299, // Front Right (F, S, ???) -> Using index 5 as Foot, 6 as Shoulder, copy S to L
+  300, 299, 381, // Rear Left (???, L, S) -> Using index 3 as Leg, 4 as Shoulder
+  307, 243, 243  // Rear Right (F, L, ???) -> Using index 7 as Foot, 8 as Leg, copy L to S
 };
 
 // --- JOINT MAPPING ---
@@ -55,18 +55,18 @@ struct JointMap {
 };
 
 JointMap joint_mapping[12] = {
-  {"motor_front_left_shoulder", 0, 0},
+  {"motor_front_left_shoulder", 2, 2},
   {"motor_front_left_leg", 1, 1},
-  {"foot_motor_front_left", 2, 2},
-  {"motor_front_right_shoulder", 3, 3},
-  {"motor_front_right_leg", 4, 4},
-  {"foot_motor_front_right", 5, 5},
-  {"motor_rear_left_shoulder", 6, 6},
-  {"motor_rear_left_leg", 7, 7},
-  {"foot_motor_rear_left", 8, 8},
-  {"motor_rear_right_shoulder", 9, 9},
-  {"motor_rear_right_leg", 10, 10},
-  {"foot_motor_rear_right", 11, 11}
+  {"foot_motor_front_left", 0, 0},
+  {"motor_front_right_shoulder", 8, 4},
+  {"motor_front_right_leg", 7, 5}, // Pin 7 is X, but user might have FR Leg here? 
+  {"foot_motor_front_right", 6, 3},
+  {"motor_rear_left_shoulder", 5, 8},
+  {"motor_rear_left_leg", 4, 7},
+  {"foot_motor_rear_left", 3, 6}, // Pin 3 is X
+  {"motor_rear_right_shoulder", 10, 11},
+  {"motor_rear_right_leg", 9, 10},
+  {"foot_motor_rear_right", 12, 9} // Using 12 for BR? 
 };
 
 // --- MICRO-ROS VARIABLES ---

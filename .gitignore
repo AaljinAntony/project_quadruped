@@ -5,10 +5,6 @@ log/
 .vscode/
 .agent/
 
-#agentfiles
-AGENT_MEMORY.md
-GEMINI.md
-REPO_INDEX.md
 
 # Python
 __pycache__/

@@ -1,358 +1,131 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include <Wire.h>
-#include <Adafruit_PWMServoDriver.h>
-// #include <Adafruit_MPU6050.h>
-// #include <Adafruit_Sensor.h>
-#include <micro_ros_platformio.h>
-#include <stdio.h>
-#include <rcl/rcl.h>
-#include <rcl/error_handling.h>
-#include <rclc/rclc.h>
-#include <rclc/executor.h>
-#include <sensor_msgs/msg/joint_state.h>
-// #include <sensor_msgs/msg/imu.h>
-// #include <sensor_msgs/msg/range.h>
-
-// --- HARDWARE CONFIGURATION ---
-Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40); // Default I2C address for PCA9685
-// Adafruit_MPU6050 mpu;
-// bool mpu_found = false;
-
-#define SERVO_FREQ 50 // Standard analog/digital servo frequency
-
-// #define TRIG_PIN 4
-// #define ECHO_PIN 18
+#include <ESP32Ping.h>
+#include <WiFiUdp.h>
+#include <esp_wifi.h>
 
 // --- NETWORK CONFIGURATION ---
-// Replace these with your actual Wi-Fi and Host machine details
-// char ssid[] = "Angamaly Broadband 2.4ghz";
-// char psk[] = "biju@9849";
-// char ssid[] = "WE_Kaliyath _2_4G";
-// char psk[] = "nisha8182";
-char ssid[] = "Aaljin";
-char psk[] = "17082004";
-IPAddress agent_ip(10, 75, 77, 49); // The IP address of the computer running ROS 2 (update this!)
-size_t agent_port = 8888;
+// Target: Host machine on Home Wi-Fi
+const char* ssid = "WE_Kaliyath _2_4G"; 
+const char* psk  = "nisha8182";
+IPAddress agent_ip(192, 168, 1, 34); 
+const uint16_t agent_port = 8888;
 
-// --- CALIBRATION OFFSETS ---
-// These are the values you will find using the joint_state_publisher_gui.
-float joint_offsets[12] = {
-  0.0, 0.0, 0.0, // Front Left (Shoulder, Leg, Foot)
-  0.0, 0.0, 0.0, // Front Right (Shoulder, Leg, Foot)
-  0.0, 0.0, 0.0, // Rear Left (Shoulder, Leg, Foot)
-  0.0, 0.0, 0.0  // Rear Right (Shoulder, Leg, Foot)
-};
-
-// --- JOINT MAPPING ---
-// Maps the exact ROS 2 joint string name to the physical PCA9685 pin (0-11)
-struct JointMap {
-  const char* name;
-  int pca_pin;
-  int offset_index;
-};
-
-JointMap joint_mapping[12] = {
-  {"motor_front_left_shoulder", 0, 0},
-  {"motor_front_left_leg", 1, 1},
-  {"foot_motor_front_left", 2, 2},
-  {"motor_front_right_shoulder", 3, 3},
-  {"motor_front_right_leg", 4, 4},
-  {"foot_motor_front_right", 5, 5},
-  {"motor_rear_left_shoulder", 6, 6},
-  {"motor_rear_left_leg", 7, 7},
-  {"foot_motor_rear_left", 8, 8},
-  {"motor_rear_right_shoulder", 9, 9},
-  {"motor_rear_right_leg", 10, 10},
-  {"foot_motor_rear_right", 11, 11}
-};
-
-// --- MICRO-ROS VARIABLES ---
-rcl_subscription_t subscriber;
-// rcl_publisher_t imu_publisher;
-// rcl_publisher_t range_publisher;
-
-sensor_msgs__msg__JointState joint_msg;
-// sensor_msgs__msg__Imu imu_msg;
-// sensor_msgs__msg__Range range_msg;
-
-rclc_executor_t executor;
-rclc_support_t support;
-rcl_allocator_t allocator;
-rcl_node_t node;
-
-// --- TIMERS (Non-Blocking) ---
-// unsigned long last_imu_time = 0;
-// unsigned long last_range_time = 0;
-// const unsigned long IMU_INTERVAL = 50;   // 20Hz
-// const unsigned long RANGE_INTERVAL = 200; // 5Hz
-
-// --- MATH CONVERSION FUNCTION ---
-int radToPwmTick(float radians) {
-  // Convert Radians to Microseconds (1500us is center, +/- 1000us for 90 degrees)
-  float pulse_us = 1500.0 + (radians * (1000.0 / 1.5708));
-  
-  // Constrain to safe physical limits to protect the DS3235 servos
-  if (pulse_us < 500) pulse_us = 500;
-  if (pulse_us > 2500) pulse_us = 2500;
-
-  // Convert Microseconds to 12-bit PCA9685 Tick (0-4095)
-  int tick = (int)(pulse_us / 4.8828);
-  return tick;
-}
-
-// --- SUBSCRIBER CALLBACK ---
-void joint_state_callback(const void * msgin) {
-  const sensor_msgs__msg__JointState * msg = (const sensor_msgs__msg__JointState *)msgin;
-  
-  if (msg->position.size > 0 && msg->name.size > 0) {
-    for (size_t i = 0; i < msg->name.size; i++) {
-      // Find which physical pin this joint string corresponds to
-      for (int j = 0; j < 12; j++) {
-        if (strcmp(msg->name.data[i].data, joint_mapping[j].name) == 0) {
-          // 1. Subtract the calibration offset to zero the physical leg
-          float corrected_angle_rad = msg->position.data[i] - joint_offsets[joint_mapping[j].offset_index];
-          
-          // 2. Convert to PWM ticks
-          int pwm_tick = radToPwmTick(corrected_angle_rad);
-          
-          // 3. Send to specific PCA9685 pin
-          pwm.setPWM(joint_mapping[j].pca_pin, 0, pwm_tick);
-          break; // Found the match, move to next incoming joint
-        }
-      }
-    }
-  }
-}
-
-// --- SENSOR READING FUNCTIONS ---
-/*
-void publish_imu_data() {
-  if (!mpu_found) return;
-
-  sensors_event_t a, g, temp;
-  mpu.getEvent(&a, &g, &temp);
-
-  // Default frame
-  imu_msg.header.frame_id.data = (char*)"imu_link";
-  imu_msg.header.frame_id.size = strlen(imu_msg.header.frame_id.data);
-
-  // Linear acceleration (m/s^2)
-  imu_msg.linear_acceleration.x = a.acceleration.x;
-  imu_msg.linear_acceleration.y = a.acceleration.y;
-  imu_msg.linear_acceleration.z = a.acceleration.z;
-
-  // Angular velocity (rad/s)
-  imu_msg.angular_velocity.x = g.gyro.x;
-  imu_msg.angular_velocity.y = g.gyro.y;
-  imu_msg.angular_velocity.z = g.gyro.z;
-
-  // Orientation is typically calculated by a Madgwick/Mahony filter on the host PC (robot_localization)
-  // We just send the raw accel/gyro data.
-  
-  rcl_publish(&imu_publisher, &imu_msg, NULL);
-}
-
-void publish_range_data() {
-  // Trigger ultrasonic sensor
-  digitalWrite(TRIG_PIN, LOW);
-  delayMicroseconds(2);
-  digitalWrite(TRIG_PIN, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(TRIG_PIN, LOW);
-
-  // Read response
-  long duration = pulseIn(ECHO_PIN, HIGH, 30000); // 30ms timeout (~5 meters max)
-  float distance_m = (duration * 0.0343) / 200.0; // convert us to meters
-
-  if (duration == 0) {
-    distance_m = 4.0; // Out of range reading
-  }
-
-  range_msg.header.frame_id.data = (char*)"ultrasonic_link";
-  range_msg.header.frame_id.size = strlen(range_msg.header.frame_id.data);
-  
-  range_msg.radiation_type = sensor_msgs__msg__Range__ULTRASOUND;
-  range_msg.field_of_view = 0.26; // ~15 degrees
-  range_msg.min_range = 0.02;     // 2 cm
-  range_msg.max_range = 4.0;      // 4 m
-  range_msg.range = distance_m;
-
-  rcl_publish(&range_publisher, &range_msg, NULL);
-}
-*/
-
-#include <esp_wifi.h>
-#include <ESP32Ping.h>
+WiFiUDP udp;
 
 void setup() {
   Serial.begin(115200);
-  delay(1000); 
-
-  // Initialize PCA9685
-  pwm.begin();
-  pwm.setOscillatorFrequency(27000000);
-  // Scan for networks
-  Serial.println("Scanning for Wi-Fi networks...");
+  delay(3000); 
+  Serial.println("\n\n===============================================");
+  Serial.println("   ESP32 NETWORK DIAGNOSTIC SUITE v1.1         ");
+  Serial.println("===============================================");
+  
+  // 1. SCAN PHASE
+  Serial.println("\n[PHASE 1] Wi-Fi Scan");
+  Serial.println("[*] Searching for 2.4GHz access points...");
   int n = WiFi.scanNetworks();
-  Serial.print("Scan done, found "); Serial.print(n); Serial.println(" networks:");
-  for (int i = 0; i < n; ++i) {
-    Serial.print(WiFi.SSID(i)); Serial.print(" ("); Serial.print(WiFi.RSSI(i)); Serial.print(") ");
-    Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN)?" ":"*");
-    delay(10);
+  if (n == 0) {
+    Serial.println("[!] ERROR: No networks found.");
+  } else {
+    Serial.printf("[+] Found %d networks. Looking for '%s'...\n", n, ssid);
+    bool found_target = false;
+    for (int i = 0; i < n; ++i) {
+      Serial.printf("    - %-20s (RSSI: %3d dBm, Ch: %2d) %s\n", 
+                    WiFi.SSID(i).c_str(), WiFi.RSSI(i), WiFi.channel(i),
+                    (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "OPEN" : "SECURE");
+      if (WiFi.SSID(i) == ssid) found_target = true;
+    }
   }
 
-  // Initialize Wi-Fi
-  Serial.println("Connecting to Wi-Fi...");
+  // 2. CONNECTION PHASE
+  Serial.println("\n[PHASE 2] Connecting to Wi-Fi");
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, psk);
+  Serial.printf("[*] Connecting to %s ", ssid);
   
-  unsigned long start_time = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start_time < 20000) {
+  unsigned long start_attempt = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start_attempt < 20000) {
     delay(1000);
-    Serial.print("Status: ");
-    switch(WiFi.status()) {
-      case WL_IDLE_STATUS: Serial.println("IDLE"); break;
-      case WL_NO_SSID_AVAIL: Serial.println("NO SSID"); break;
-      case WL_SCAN_COMPLETED: Serial.println("SCAN COMPLETED"); break;
-      case WL_CONNECT_FAILED: Serial.println("CONNECT FAILED"); break;
-      case WL_CONNECTION_LOST: Serial.println("CONNECTION LOST"); break;
-      case WL_DISCONNECTED: Serial.println("DISCONNECTED"); break;
-      default: Serial.println("UNKNOWN"); break;
-    }
+    Serial.print(".");
   }
-  
+  Serial.println("");
+
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nConnected! IP: "); Serial.println(WiFi.localIP());
-    // Disable sleep to improve UDP stability
+    Serial.println("[+] CONNECTION SUCCESSFUL!");
+    Serial.print("    - Local IP:   "); Serial.println(WiFi.localIP());
+    Serial.print("    - Gateway:    "); Serial.println(WiFi.gatewayIP());
+    
+    // CRITICAL: Disable power-save
     WiFi.setSleep(false);
     esp_wifi_set_ps(WIFI_PS_NONE);
-
-    // Ping test to HOST/AGENT
-    Serial.print("Pinging Agent ("); Serial.print(agent_ip); Serial.println(")...");
-    if(Ping.ping(agent_ip)) {
-      Serial.println("Ping Success to Host!");
-    } else {
-      Serial.println("Ping Failed to Host!");
-      
-      // Try pinging Gateway
-      IPAddress gateway = WiFi.gatewayIP();
-      Serial.print("Pinging Gateway ("); Serial.print(gateway); Serial.println(")...");
-      if(Ping.ping(gateway)) {
-        Serial.println("Ping Success to Gateway! Network is OK, Host is the problem.");
-      } else {
-        Serial.println("Ping Failed to Gateway! Network is isolated or Wi-Fi is broken.");
-      }
-    }
+    Serial.println("[*] Wi-Fi Power Save DISABLED.");
   } else {
-    Serial.print("\nWiFi Connection Failed! Final Status: "); Serial.println(WiFi.status());
+    Serial.printf("[!] FATAL: Connection failed with status %d\n", WiFi.status());
+    return;
   }
 
+  // 3. GATEWAY PING PHASE
+  Serial.println("\n[PHASE 3] Link Layer Verification (Gateway)");
+  IPAddress gw = WiFi.gatewayIP();
+  Serial.printf("[*] Pinging Gateway %s ...\n", gw.toString().c_str());
+  if (Ping.ping(gw, 3)) {
+    Serial.println("[+] Gateway REACHABLE.");
+  } else {
+    Serial.println("[!] ERROR: Gateway UNREACHABLE.");
+  }
 
-  // Initialize Micro-ROS transport (pointing to pre-connected WiFi)
-  set_microros_wifi_transports(ssid, psk, agent_ip, agent_port);
+  // 4. HOST PING PHASE
+  Serial.println("\n[PHASE 4] Host Layer Verification (Laptop)");
+  Serial.printf("[*] Pinging Host Laptop %s ...\n", agent_ip.toString().c_str());
+  if (Ping.ping(agent_ip, 3)) {
+    Serial.println("[+] Host REACHABLE!");
+  } else {
+    Serial.println("[!] ERROR: Host UNREACHABLE.");
+    Serial.println("[?] Possible cause: Firewall on laptop.");
+  }
 
-  // ARP warmup - Send a few raw UDP packets to the agent 
-  // to make sure the ESP32 knows the agent's MAC address
-  WiFiUDP udp;
-  udp.begin(12345);
-  Serial.println("ARP Warmup (Target: 8888)...");
-  for(int i = 0; i < 3; i++){
+  // 5. UDP LOOPBACK PHASE
+  Serial.println("\n[PHASE 5] Transport Layer Verification (UDP)");
+  Serial.printf("[*] Sending to %s:%d\n", agent_ip.toString().c_str(), agent_port);
+  udp.begin(agent_port);
+  
+  for (int i = 1; i <= 5; i++) {
+    Serial.printf("[*] Sending UDP Probe #%d ... ", i);
     udp.beginPacket(agent_ip, agent_port);
-    udp.write((uint8_t*)"HELLO", 5);
-    if(udp.endPacket()){
-      Serial.println("Packet sent OK");
+    udp.printf("DIAG_PROBE_%d_CLK_%lu", i, millis());
+    
+    if (udp.endPacket() == 1) {
+      Serial.println("SENT OK.");
     } else {
-      Serial.println("Packet send FAILED (Error 12)");
+      Serial.print("FAILED (Error: "); Serial.print(12); Serial.println(")");
     }
+
+    // Wait for ACK
+    unsigned long wait_start = millis();
+    bool ack_received = false;
+    while (millis() - wait_start < 2000) {
+      int packetSize = udp.parsePacket();
+      if (packetSize) {
+        char buffer[100];
+        int len = udp.read(buffer, sizeof(buffer)-1);
+        if (len > 0) buffer[len] = '\0';
+        Serial.printf("    [+] RECEIVED ACK: '%s'\n", buffer);
+        ack_received = true;
+        break;
+      }
+      delay(10);
+    }
+    if (!ack_received) Serial.println("    [-] NO RESPONSE.");
     delay(1000);
   }
-  udp.stop();
 
-  Serial.println("Micro-ROS Init...");
-  delay(1000);
-  
-  allocator = rcl_get_default_allocator();
-
-  // Create Support and Node
-  rclc_support_init(&support, 0, NULL, &allocator);
-  rclc_node_init_default(&node, "esp32_servo_bridge", "", &support);
-
-  // Create Subscriber targeting CHAMP's Joint States
-  rclc_subscription_init_default(
-    &subscriber,
-    &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
-    "/joint_states" 
-  );
-
-  // Create IMU Publisher
-  /*
-  rclc_publisher_init_default(
-    &imu_publisher,
-    &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
-    "/imu/data"
-  );
-  */
-
-  // Create Ultrasonic Publisher
-  /*
-  rclc_publisher_init_default(
-    &range_publisher,
-    &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Range),
-    "/ultrasonic/range"
-  );
-  */
-
-  // --- CRITICAL MEMORY ALLOCATION FOR INCOMING MESSAGES ---
-  // Pre-allocate memory for dynamic arrays to prevent deserialization crashes!
-  joint_msg.name.capacity = 12;
-  joint_msg.name.data = (rosidl_runtime_c__String *) malloc(12 * sizeof(rosidl_runtime_c__String));
-  joint_msg.name.size = 0;
-  for(int i = 0; i < 12; i++){
-      joint_msg.name.data[i].capacity = 50; 
-      joint_msg.name.data[i].data = (char *) malloc(50 * sizeof(char));
-      joint_msg.name.data[i].size = 0;
-  }
-
-  joint_msg.position.capacity = 12;
-  joint_msg.position.data = (double*) malloc(12 * sizeof(double));
-  joint_msg.position.size = 0;
-
-  joint_msg.velocity.capacity = 12;
-  joint_msg.velocity.data = (double*) malloc(12 * sizeof(double));
-  joint_msg.velocity.size = 0;
-
-  joint_msg.effort.capacity = 12;
-  joint_msg.effort.data = (double*) malloc(12 * sizeof(double));
-  joint_msg.effort.size = 0;
-
-  // Create Executor (3 handles: 1 subscriber + 2 publishers but publishers don't need handles in the executor to spin, only subscribers/services/timers do )
-  rclc_executor_init(&executor, &support.context, 1, &allocator);
-  rclc_executor_add_subscription(&executor, &subscriber, &joint_msg, &joint_state_callback, ON_NEW_DATA);
+  Serial.println("\n[DIAGNOSTIC COMPLETE]");
+  Serial.println("Send 'r' to restart test.");
 }
 
 void loop() {
-  // unsigned long current_time = millis();
-
-  // Non-blocking IMU publish
-  /*
-  if (current_time - last_imu_time >= IMU_INTERVAL) {
-    publish_imu_data();
-    last_imu_time = current_time;
+  if (Serial.available()) {
+    char c = Serial.read();
+    if (c == 'r') ESP.restart();
   }
-  */
-
-  // Non-blocking Ultrasonic publish
-  /*
-  if (current_time - last_range_time >= RANGE_INTERVAL) {
-    publish_range_data();
-    last_range_time = current_time;
-  }
-  */
-
-  // Keep the micro-ROS agent spinning to catch incoming CHAMP messages
-  rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
 }

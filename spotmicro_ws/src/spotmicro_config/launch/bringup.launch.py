@@ -34,6 +34,9 @@ def generate_launch_description():
     bringup_launch_path = PathJoinSubstitution(
         [FindPackageShare('champ_bringup'), 'launch', 'bringup.launch.py']
     )
+    description_config = PathJoinSubstitution(
+        [FindPackageShare('spotmicro_description'), 'urdf', 'spotmicroai.urdf.xacro']
+    )
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -73,7 +76,8 @@ def generate_launch_description():
                 "joint_controller_topic": "joint_group_position_controller/joint_trajectory",
                 "joints_map_path": joints_config,
                 "links_map_path": links_config,
-                "gait_config_path": gait_config
+                "gait_config_path": gait_config,
+                "description_path": description_config
             }.items(),
         )
     ])

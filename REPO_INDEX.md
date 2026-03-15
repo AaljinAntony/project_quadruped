@@ -15,9 +15,14 @@
 - **Dependencies**: N/A.
 
 ### `SpotMicro_Firmware/src/main.cpp`
-- **Purpose**: Diagnostic firmware for troubleshooting ESP32 network connectivity.
-- **Key Responsibilities**: Automates a multi-phase test (Scan -> Connect -> Gateway Ping -> Host Ping -> UDP Loopback) to isolate link-layer and transport-layer failures in robot-to-host communication.
-- **Dependencies**: `ESP32Ping`, `WiFiUdp`.
+- **Purpose**: Micro-ROS bridge firmware for hardware control.
+- **Key Responsibilities**: Manages Wi-Fi connectivity to the host hotspot, initializes Micro-ROS transport, and subscribes to `/joint_states`. It maps incoming ROS 2 joint positions to physical PCA9685 PWM pins while applying calibration offsets.
+- **Dependencies**: `micro_ros_platformio`, `Adafruit_PWMServoDriver`, `WiFi`.
+
+### `spotmicro_ws/docker-compose.yaml`
+- **Purpose**: Orchestration for the ROS 2 and Micro-ROS environment.
+- **Key Responsibilities**: Defines the `spotmicro_dev` (simulation/compute) and `microros_agent` services. Critically uses `network_mode: host` to allow the Micro-ROS agent to bind to the laptop's hotspot interface for ESP32 discovery.
+- **Dependencies**: Docker Compose.
 
 ### `SpotMicro_Firmware/scripts/udp_diagnostic.py`
 - **Purpose**: Host-side UDP listener for network diagnostics.

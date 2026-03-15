@@ -1,19 +1,47 @@
-/**:
+quadruped_controller_node:
   ros__parameters:
     joints_map:
       left_front:
         - motor_front_left_shoulder
         - motor_front_left_leg
         - foot_motor_front_left
+        - front_left_toe
       right_front:
         - motor_front_right_shoulder
         - motor_front_right_leg
         - foot_motor_front_right
+        - front_right_toe
       left_hind:
         - motor_rear_left_shoulder
         - motor_rear_left_leg
         - foot_motor_rear_left
+        - rear_left_toe
       right_hind:
         - motor_rear_right_shoulder
         - motor_rear_right_leg
         - foot_motor_rear_right
+        - rear_right_toe
+
+state_estimation_node:
+  ros__parameters:
+    joints_map:
+      left_front:
+        - motor_front_left_shoulder
+        - motor_front_left_leg
+        - foot_motor_front_left
+        - front_left_toe
+      right_front:
+        - motor_front_right_shoulder
+        - motor_front_right_leg
+        - foot_motor_front_right
+        - front_right_toe
+      left_hind:
+        - motor_rear_left_shoulder
+        - motor_rear_left_leg
+        - foot_motor_rear_left
+        - rear_left_toe
+      right_hind:
+        - motor_rear_right_shoulder
+        - motor_rear_right_leg
+        - foot_motor_rear_right
+        - rear_right_toe

@@ -1,131 +1,108 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include <ESP32Ping.h>
-#include <WiFiUdp.h>
-#include <esp_wifi.h>
+#include <Wire.h>
+#include <Adafruit_PWMServoDriver.h>
+#include <micro_ros_platformio.h>
+#include <stdio.h>
+#include <rcl/rcl.h>
+#include <rcl/error_handling.h>
+#include <rclc/rclc.h>
+#include <rclc/executor.h>
+#include <std_msgs/msg/int32_multi_array.h>
+#include <std_msgs/msg/string.h>
+
+// --- HARDWARE CONFIGURATION ---
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
+#define SERVO_FREQ 50
+#define VOLTAGE_PIN 34 
 
 // --- NETWORK CONFIGURATION ---
-// Target: Host machine on Home Wi-Fi
-const char* ssid = "WE_Kaliyath _2_4G"; 
-const char* psk  = "nisha8182";
-IPAddress agent_ip(192, 168, 1, 34); 
-const uint16_t agent_port = 8888;
+char ssid[] = "SpotMicro";
+char psk[] = "spotpassword";
+IPAddress agent_ip(10, 42, 0, 1);
+size_t agent_port = 8888;
 
-WiFiUDP udp;
+// --- JOINT MAPPING (SAME AS MAIN.CPP) ---
+struct JointMap {
+  const char* name;
+  int pca_pin;
+};
+
+JointMap joint_mapping[12] = {
+  {"Front Left Shoulder", 0}, {"Front Left Leg", 1}, {"Front Left Foot", 2},
+  {"Front Right Shoulder", 3}, {"Front Right Leg", 4}, {"Front Right Foot", 5},
+  {"Rear Left Shoulder", 6}, {"Rear Left Leg", 7}, {"Rear Left Foot", 8},
+  {"Rear Right Shoulder", 9}, {"Rear Right Leg", 10}, {"Rear Right Foot", 11}
+};
+
+// --- MICRO-ROS VARIABLES ---
+rcl_subscription_t calib_subscriber;
+rcl_publisher_t status_publisher;
+std_msgs__msg__Int32MultiArray calib_msg;
+std_msgs__msg__String status_msg;
+
+rclc_executor_t executor;
+rclc_support_t support;
+rcl_allocator_t allocator;
+rcl_node_t node;
+
+char status_buffer[200];
+
+float readVoltage() {
+    int raw = analogRead(VOLTAGE_PIN);
+    float voltage = (raw / 4095.0) * 3.3 * (12.0 / 2.0); 
+    return voltage;
+}
+
+void calib_callback(const void * msgin) {
+    const std_msgs__msg__Int32MultiArray * msg = (const std_msgs__msg__Int32MultiArray *)msgin;
+    
+    if (msg->data.size >= 2) {
+        int motor_idx = msg->data.data[0];
+        int pwm_tick = msg->data.data[1];
+        
+        if (motor_idx >= 0 && motor_idx < 12) {
+            pwm.setPWM(motor_idx, 0, pwm_tick);
+            
+            float v = readVoltage();
+            snprintf(status_buffer, sizeof(status_buffer), 
+                     "[%s] PIN: %d, PWM: %d, Batt: %.2fV", 
+                     joint_mapping[motor_idx].name, motor_idx, pwm_tick, v);
+            
+            status_msg.data.data = status_buffer;
+            status_msg.data.size = strlen(status_buffer);
+            rcl_publish(&status_publisher, &status_msg, NULL);
+            
+            Serial.println(status_buffer);
+        }
+    }
+}
 
 void setup() {
-  Serial.begin(115200);
-  delay(3000); 
-  Serial.println("\n\n===============================================");
-  Serial.println("   ESP32 NETWORK DIAGNOSTIC SUITE v1.1         ");
-  Serial.println("===============================================");
-  
-  // 1. SCAN PHASE
-  Serial.println("\n[PHASE 1] Wi-Fi Scan");
-  Serial.println("[*] Searching for 2.4GHz access points...");
-  int n = WiFi.scanNetworks();
-  if (n == 0) {
-    Serial.println("[!] ERROR: No networks found.");
-  } else {
-    Serial.printf("[+] Found %d networks. Looking for '%s'...\n", n, ssid);
-    bool found_target = false;
-    for (int i = 0; i < n; ++i) {
-      Serial.printf("    - %-20s (RSSI: %3d dBm, Ch: %2d) %s\n", 
-                    WiFi.SSID(i).c_str(), WiFi.RSSI(i), WiFi.channel(i),
-                    (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "OPEN" : "SECURE");
-      if (WiFi.SSID(i) == ssid) found_target = true;
-    }
-  }
+    Serial.begin(115200);
+    pwm.begin();
+    pwm.setOscillatorFrequency(27000000);
+    pwm.setPWMFreq(SERVO_FREQ);
 
-  // 2. CONNECTION PHASE
-  Serial.println("\n[PHASE 2] Connecting to Wi-Fi");
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, psk);
-  Serial.printf("[*] Connecting to %s ", ssid);
-  
-  unsigned long start_attempt = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start_attempt < 20000) {
-    delay(1000);
-    Serial.print(".");
-  }
-  Serial.println("");
+    set_microros_wifi_transports(ssid, psk, agent_ip, agent_port);
+    delay(2000);
 
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("[+] CONNECTION SUCCESSFUL!");
-    Serial.print("    - Local IP:   "); Serial.println(WiFi.localIP());
-    Serial.print("    - Gateway:    "); Serial.println(WiFi.gatewayIP());
-    
-    // CRITICAL: Disable power-save
-    WiFi.setSleep(false);
-    esp_wifi_set_ps(WIFI_PS_NONE);
-    Serial.println("[*] Wi-Fi Power Save DISABLED.");
-  } else {
-    Serial.printf("[!] FATAL: Connection failed with status %d\n", WiFi.status());
-    return;
-  }
+    allocator = rcl_get_default_allocator();
+    rclc_support_init(&support, 0, NULL, &allocator);
+    rclc_node_init_default(&node, "spotmicro_calibration_node", "", &support);
 
-  // 3. GATEWAY PING PHASE
-  Serial.println("\n[PHASE 3] Link Layer Verification (Gateway)");
-  IPAddress gw = WiFi.gatewayIP();
-  Serial.printf("[*] Pinging Gateway %s ...\n", gw.toString().c_str());
-  if (Ping.ping(gw, 3)) {
-    Serial.println("[+] Gateway REACHABLE.");
-  } else {
-    Serial.println("[!] ERROR: Gateway UNREACHABLE.");
-  }
+    rclc_subscription_init_default(&calib_subscriber, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32MultiArray), "/motor_calibration");
+    rclc_publisher_init_default(&status_publisher, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String), "/motor_status");
 
-  // 4. HOST PING PHASE
-  Serial.println("\n[PHASE 4] Host Layer Verification (Laptop)");
-  Serial.printf("[*] Pinging Host Laptop %s ...\n", agent_ip.toString().c_str());
-  if (Ping.ping(agent_ip, 3)) {
-    Serial.println("[+] Host REACHABLE!");
-  } else {
-    Serial.println("[!] ERROR: Host UNREACHABLE.");
-    Serial.println("[?] Possible cause: Firewall on laptop.");
-  }
+    calib_msg.data.capacity = 2;
+    calib_msg.data.data = (int32_t*) malloc(2 * sizeof(int32_t));
+    status_msg.data.capacity = 200;
+    status_msg.data.data = (char*) malloc(200 * sizeof(char));
 
-  // 5. UDP LOOPBACK PHASE
-  Serial.println("\n[PHASE 5] Transport Layer Verification (UDP)");
-  Serial.printf("[*] Sending to %s:%d\n", agent_ip.toString().c_str(), agent_port);
-  udp.begin(agent_port);
-  
-  for (int i = 1; i <= 5; i++) {
-    Serial.printf("[*] Sending UDP Probe #%d ... ", i);
-    udp.beginPacket(agent_ip, agent_port);
-    udp.printf("DIAG_PROBE_%d_CLK_%lu", i, millis());
-    
-    if (udp.endPacket() == 1) {
-      Serial.println("SENT OK.");
-    } else {
-      Serial.print("FAILED (Error: "); Serial.print(12); Serial.println(")");
-    }
-
-    // Wait for ACK
-    unsigned long wait_start = millis();
-    bool ack_received = false;
-    while (millis() - wait_start < 2000) {
-      int packetSize = udp.parsePacket();
-      if (packetSize) {
-        char buffer[100];
-        int len = udp.read(buffer, sizeof(buffer)-1);
-        if (len > 0) buffer[len] = '\0';
-        Serial.printf("    [+] RECEIVED ACK: '%s'\n", buffer);
-        ack_received = true;
-        break;
-      }
-      delay(10);
-    }
-    if (!ack_received) Serial.println("    [-] NO RESPONSE.");
-    delay(1000);
-  }
-
-  Serial.println("\n[DIAGNOSTIC COMPLETE]");
-  Serial.println("Send 'r' to restart test.");
+    rclc_executor_init(&executor, &support.context, 1, &allocator);
+    rclc_executor_add_subscription(&executor, &calib_subscriber, &calib_msg, &calib_callback, ON_NEW_DATA);
 }
 
 void loop() {
-  if (Serial.available()) {
-    char c = Serial.read();
-    if (c == 'r') ESP.restart();
-  }
+    rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
 }

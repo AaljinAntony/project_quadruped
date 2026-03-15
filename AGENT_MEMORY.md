@@ -15,9 +15,17 @@
 - Host machine must support Docker, Docker Compose, and NVIDIA Container Toolkit for full simulation capabilities.
 - The `SpotMicro_Firmware/src/main.cpp` requires hardcoded Wi-Fi credentials (`ssid`, `psk`) and the Host's IP (`agent_ip`) to communicate with the Micro-ROS Agent.
 
-- **Network Isolation Discovery**: ESP32 communication failed on mobile hotspots due to "Client Isolation" (phone hotspots) and 5GHz band incompatibility. 2.4GHz is mandatory. Link-layer (ARP) resolution is the definitive reachability test. (2026-03-15)
-- **Diagnostic Firmware Strategy**: Replaced standard Micro-ROS code with a "Diagnostic Suite" for step-by-step verification (Scan -> Connect -> Gateway Ping -> Host Ping -> UDP Loopback).
-- **Docker Status**: Only the `micro-ros-agent` container is currently running. The main `spotmicro_container` is exited.
+- **Network Isolation Discovery**: Initial failures were caused by host firewall (`ufw`) and router "AP Isolation". Switching to a laptop-hosted hotspot (`SpotMicro`) resolved the link-layer reachability issues. (2026-03-15)
+- **Final Networking Proof**: ESP32 IP `10.42.0.128` successfully pings Host `10.42.0.1`. Handshake confirmed in Agent logs with "session established".
+
+### 📶 Final Working Network Configuration
+- **Method**: Laptop Hotspot (Workaround for Router AP Isolation)
+- **SSID**: `SpotMicro`
+- **Pass**: `spotpassword`
+- **Host IP**: `10.42.0.1`
+- **ESP32 IP**: `10.42.0.128`
+- **Port**: `8888` (UDP)
+- **Status**: **SUCCESS - Session Established** ✅
 
 ## Trade-offs
 - **Wi-Fi vs. Wired for Micro-ROS**: Using Wi-Fi for the ESP32 connection enables a completely untethered physical robot, but introduces potential latency and reliability issues compared to a hardwired serial connection.
@@ -25,4 +33,10 @@
 
 ## Known Issues & Unresolved Questions
 - **Gazebo UI Crashes**: Running the simulation without `./start.sh` (which handles `xhost +local:root`) leads to GUI crashes due to X11 authorization issues.
-- **Micro-ROS Agent Connection**: Requires host network mode in docker-compose. If "Session established" is missing, host firewall or IP mismatches are the primary causes.
+- **Micro-ROS Agent Connection**: Requires `network_mode: host` in `docker-compose.yaml`.
+- **ESP32 Serial Monitor**: After initialization, `main.cpp` enters a loop waiting for ROS 2 messages. It will NOT print anything to the serial monitor unless there's an error or a specific print statement is triggered.
+- **CHAMP Configuration**:
+    - **Namespace Scoping**: Configurations in `joints.yaml`, `links.yaml`, and `gait.yaml` MUST be scoped under the specific node names (`quadruped_controller_node`, `state_estimation_node`) rather than a wildcard `/**` to avoid parameter loading issues.
+    - **Kinematic Chain**: CHAMP expects a 4-element structure for legs in the maps (Hip, Upper, Lower, Toe). Removing the toe elements or mapping only 3 joints can cause internal vector out-of-bounds crashes (exit code -11).
+    - **URDF Mapping**: The SpotMicro URDF path must be explicitly passed to `champ_bringup` via the `description_path` parameter in the launch file.
+- **Micro-ROS Stability**: Successfully established a bidirectional UDP session via laptop hotspot (10.42.0.1 -> 10.42.0.128). verified end-to-end movement commands producing joint trajectories.

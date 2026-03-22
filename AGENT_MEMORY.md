@@ -41,15 +41,15 @@
 |---|---|---|---|
 | FL Foot | 0 | 362 | **+27.4°** |
 | FL Leg | 1 | 292 | **-7.5°** |
-| FL Shoulder | 2 | 292 | **-7.5°** |
+| FL Shoulder | 2 | 302 | **-2.5°** |
 | RL Foot | 4 | 375 | **+33.9°** |
-| RL Leg | 5 | 288 | **-9.5°** |
-| RL Shoulder | 6 | 293 | **-7.0°** |
+| RL Leg | 5 | 302 | **-2.5°** |
+| RL Shoulder | 6 | 303 | **-2.0°** |
 | FR Foot | 8 | 229 | **-38.9°** |
 | FR Leg | 9 | 305 | **-1.0°** |
 | FR Shoulder | 10 | 306 | **-0.5°** |
 | RR Foot | 12 | 224 | **-41.4°** |
-| RR Leg | 13 | 325 | **+9.0°** |
+| RR Leg | 13 | 311 | **+2.0°** |
 | RR Shoulder | 14 | 320 | **+6.5°** |
 
 - **Verification Logic**: 115 ticks per Rad = ~2.01 ticks per Degree. 

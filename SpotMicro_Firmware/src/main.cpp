@@ -23,10 +23,10 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
 // Verified Degree Offsets (Physically Calibrated for Hardware Asymmetry)
 // Reference center is 307 PWM
 float joint_offsets_deg[12] = {
-  27.4, -7.5, -7.5,   // FL Foot, Leg, Shoulder
-  33.9, -9.5, -7.0,   // RL Foot, Leg, Shoulder
+  27.4, -7.5, -2.5,   // FL Foot, Leg, Shoulder
+  33.9, -2.5, -2.0,   // RL Foot, Leg, Shoulder
   -38.9, -1.0, -0.5,  // FR Foot, Leg, Shoulder
-  -41.4, 9.0, 6.5     // RR Foot, Leg, Shoulder
+  -41.4, 2.0, 6.5     // RR Foot, Leg, Shoulder
 };
 
 struct JointMap {
@@ -132,6 +132,7 @@ void set_pose(int pose_id) {
 void joint_callback(const void * msgin) {
   const sensor_msgs__msg__JointState * msg = (const sensor_msgs__msg__JointState *)msgin;
   if (msg->position.size > 0) {
+    is_transitioning = false; // Interrupted by active walking, immediately cancel C++ smoothstep
     for (size_t i = 0; i < msg->name.size; i++) {
         for (int j = 0; j < 12; j++) {
             if (strcmp(msg->name.data[i].data, joint_mapping[j].name) == 0) {
@@ -140,17 +141,12 @@ void joint_callback(const void * msgin) {
                 float final_angle_deg = joint_offsets_deg[joint_mapping[j].offset_index] + (angle_deg_relative * joint_mapping[j].direction);
                 
                 int final_tick = PWM_CENTER + (int)(final_angle_deg * TICKS_PER_DEG);
-                pwm.setPWM(joint_mapping[j].pca_pin, 0, final_tick);
-                current_pwm[joint_mapping[j].pca_pin] = final_tick;
-                is_transitioning = false; // Interrupted by active walking
-
-                // Log movement in absolute degrees
-                snprintf(status_buffer, sizeof(status_buffer), "MOVE: %s to %.1f°", joint_mapping[j].name, final_angle_deg);
-                status_msg.data.data = status_buffer;
-                status_msg.data.size = strlen(status_buffer);
-                rcl_publish(&status_pub, &status_msg, NULL);
                 
-                Serial.println(status_buffer);
+                // Only send I2C command if the target PWM has actually mathematically shifted
+                if (final_tick != (int)current_pwm[joint_mapping[j].pca_pin]) {
+                    pwm.setPWM(joint_mapping[j].pca_pin, 0, final_tick);
+                    current_pwm[joint_mapping[j].pca_pin] = final_tick;
+                }
                 break;
             }
         }

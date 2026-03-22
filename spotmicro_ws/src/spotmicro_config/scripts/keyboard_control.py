@@ -1,0 +1,104 @@
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import Int32, Int32MultiArray, String
+import sys
+import termios
+import tty
+import select
+
+class SpotKeyboardControl(Node):
+    def __init__(self):
+        super().__init__("keyboard_control")
+        self.pose_pub = self.create_publisher(Int32, "robot_pose", 10)
+        self.calib_pub = self.create_publisher(Int32MultiArray, "motor_calibration", 10)
+        self.status_sub = self.create_subscription(String, "motor_status", self.status_callback, 10)
+        self.get_logger().info("SpotMicro Keyboard Control Active.")
+        print_menu()
+
+    def status_callback(self, msg):
+        # Using \r and end="" to keep the prompt clean when MOVE logs come in
+        # But for actual movement logs, we might want to print a new line
+        data = msg.data
+        if "MOVE" in data:
+            # Overwrite the current "> " line with the log
+            print(f"\r[MOVEMENT] {data}          ")
+            print("> ", end="", flush=True)
+        else:
+            print(f"\r[STATUS] {data}          ")
+            print("> ", end="", flush=True)
+
+def print_menu():
+    print("\n" + "="*40)
+    print(" SPOTMICRO INTERACTIVE CONTROL")
+    print("="*40)
+    print(" [S] - STAND (Calibrated Neutral)")
+    print(" [X] - SIT   (Tucked Safety)")
+    print(" [N] - NEUTRAL (Hardware 307)")
+    print(" [C] - CALIBRATION MODE")
+    print(" [Q] - QUIT")
+    print("="*40)
+    print(" Watching for movements from ROS 2...")
+    print("> ", end="", flush=True)
+
+def is_data():
+    return select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], [])
+
+def main():
+    rclpy.init()
+    node = SpotKeyboardControl()
+    
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    
+    try:
+        tty.setraw(sys.stdin.fileno())
+        while rclpy.ok():
+            if is_data():
+                char = sys.stdin.read(1).lower()
+                
+                if char == "s":
+                    msg = Int32()
+                    msg.data = 1
+                    node.pose_pub.publish(msg)
+                    print("\rCommanding: STAND        ")
+                    print("> ", end="", flush=True)
+                elif char == "x":
+                    msg = Int32()
+                    msg.data = 2
+                    node.pose_pub.publish(msg)
+                    print("\rCommanding: SIT          ")
+                    print("> ", end="", flush=True)
+                elif char == "n":
+                    msg = Int32()
+                    msg.data = 0
+                    node.pose_pub.publish(msg)
+                    print("\rCommanding: NEUTRAL      ")
+                    print("> ", end="", flush=True)
+                elif char == "c":
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                    print("\r\n--- CALIBRATION MODE ---")
+                    try:
+                        pin = int(input("Enter PCA Pin (0-15): "))
+                        pwm = int(input("Enter PWM Ticks (100-500): "))
+                        msg = Int32MultiArray()
+                        msg.data = [pin, pwm]
+                        node.calib_pub.publish(msg)
+                        print(f"Sending CALIB: Pin {pin} -> {pwm}")
+                    except ValueError:
+                        print("Invalid input.")
+                    print_menu()
+                    tty.setraw(sys.stdin.fileno())
+                elif char == "q":
+                    break
+            
+            rclpy.spin_once(node, timeout_sec=0.01)
+            
+    except Exception as e:
+        print(f"\rError: {e}")
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == "__main__":
+    main()

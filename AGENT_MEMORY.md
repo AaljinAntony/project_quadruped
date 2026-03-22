@@ -36,21 +36,31 @@
 - **Micro-ROS Agent Connection**: Requires `network_mode: host` in `docker-compose.yaml`.
 - **ESP32 Serial Monitor**: After initialization, `main.cpp` enters a loop waiting for ROS 2 messages. It will NOT print anything to the serial monitor unless there's an error or a specific print statement is triggered.
 ### Motor Control & Calibration (New Hardware Mapping)
-- **Calibration Mode**: Specialized firmware exists in `calibration_main.cpp` (currently `main.cpp` for flashing).
-  - PIN 0,1,2: FL Foot, Leg, Shoulder
-  - PIN 4,5,6: BL Leg, BL Shoulder, FR Foot
-  - PIN 8,9,10: FR Shoulder, BR Foot, BR Leg
-  - PIN 12,13,14: BR Shoulder (Assumed), BL Foot (Assumed), FR Leg (Assumed)
-  - Unused: 3, 7, 11, 15
-- **Calibrated Neutrals**:
-  - FL: {F: 377, L: 292, S: 303}
-  - RL (BL): {L: 299, S: 381}
-  - FR: {F: 285, S: 299}
-  - RR (BR): {F: 307, L: 243}
+### 🦴 Calibration Status: PHYSICAL NEUTRAL VERIFIED (March 16, 2024)
+The robot is confirmed stable in its standing pose using the following hardcoded offsets in the `stand_neutral.cpp` test firmware. 0.0 radians in ROS 2 now perfectly maps to these hardware-safe center points.
+
+**Verified Offsets Table:**
+| Joint | PCA Pin | PWM Neutral |
+|---|---|---|
+| FL Foot | 0 | 363 |
+| FL Leg | 1 | 297 |
+| FL Shoulder | 2 | 296 |
+| RL Foot | 4 | 371 |
+| RL Leg | 5 | 288 |
+| RL Shoulder | 6 | 299 |
+| FR Foot | 8 | 236 |
+| FR Leg | 9 | 316 |
+| FR Shoulder | 10 | 315 |
+| RR Foot | 12 | 245 |
+| RR Leg | 13 | 331 |
+| RR Shoulder | 14 | 326 |
+
 - **Control Strategy**: 
   - Host-side Python CLI (`scripts/motor_calibration_cli.py`) sends raw PWM ticks (approx 100-500).
   - **Baseline**: Script resets to **300 PWM** on motor switch.
   - **Logging**: Interactive results are logged to `/workspace/calibration_results.txt` for automated extraction.
+  - **Human Readability**: Script now logs **Approximate Degrees** alongside PWM (`deg = (PWM * 4.8828 - 1500) * 0.09`).
+  - **Reliability**: CLI handles `Ctrl+C` for clean exits and terminal restoration.
   - ESP32 provides feedback on `/motor_status` including battery voltage.
 
 ### Known Issues & Unresolved Questions

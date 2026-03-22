@@ -37,13 +37,24 @@ char psk[] = "spotpassword";
 IPAddress agent_ip(10, 42, 0, 1); // Laptop hotspot IP (SpotMicro network)
 size_t agent_port = 8888;
 
-// --- CALIBRATION OFFSETS ---
-// These are the values you will find using the joint_state_publisher_gui.
+// Final calibrated limits to protect mechanical structure
+int joint_min_pwm[12] = {274, 286, 265, 291, 228, 255, 127, 241, 237, 131, 245, 296};
+int joint_max_pwm[12] = {495, 366, 330, 485, 386, 323, 323, 426, 373, 327, 398, 387};
+
+// These are the values found via interactive calibration (last known good position).
 float joint_offsets[12] = {
-  0.0, 0.0, 0.0, // Front Left (Shoulder, Leg, Foot)
-  0.0, 0.0, 0.0, // Front Right (Shoulder, Leg, Foot)
-  0.0, 0.0, 0.0, // Rear Left (Shoulder, Leg, Foot)
-  0.0, 0.0, 0.0  // Rear Right (Shoulder, Leg, Foot)
+  363, // 0: FL Foot (Pin 0)
+  297, // 1: FL Leg (Pin 1)
+  296, // 2: FL Shoulder (Pin 2)
+  371, // 3: RL Foot (Pin 4)
+  288, // 4: RL Leg (Pin 5)
+  299, // 5: RL Shoulder (Pin 6)
+  236, // 6: FR Foot (Pin 8)
+  316, // 7: FR Leg (Pin 9)
+  315, // 8: FR Shoulder (Pin 10)
+  245, // 9: RR Foot (Pin 12)
+  331, // 10: RR Leg (Pin 13)
+  326  // 11: RR Shoulder (Pin 14)
 };
 
 // --- JOINT MAPPING ---
@@ -55,18 +66,18 @@ struct JointMap {
 };
 
 JointMap joint_mapping[12] = {
-  {"motor_front_left_shoulder", 2, 2},
-  {"motor_front_left_leg", 1, 1},
   {"foot_motor_front_left", 0, 0},
-  {"motor_front_right_shoulder", 10, 5},
-  {"motor_front_right_leg", 9, 4},
-  {"foot_motor_front_right", 8, 3},
-  {"motor_rear_left_shoulder", 6, 8},
-  {"motor_rear_left_leg", 5, 7},
-  {"foot_motor_rear_left", 4, 6},
-  {"motor_rear_right_shoulder", 14, 11},
+  {"motor_front_left_leg", 1, 1},
+  {"motor_front_left_shoulder", 2, 2},
+  {"foot_motor_rear_left", 4, 3},
+  {"motor_rear_left_leg", 5, 4},
+  {"motor_rear_left_shoulder", 6, 5},
+  {"foot_motor_front_right", 8, 6},
+  {"motor_front_right_leg", 9, 7},
+  {"motor_front_right_shoulder", 10, 8},
+  {"foot_motor_rear_right", 12, 9},
   {"motor_rear_right_leg", 13, 10},
-  {"foot_motor_rear_right", 12, 9}
+  {"motor_rear_right_shoulder", 14, 11}
 };
 
 // --- MICRO-ROS VARIABLES ---
@@ -108,22 +119,34 @@ void joint_state_callback(const void * msgin) {
   const sensor_msgs__msg__JointState * msg = (const sensor_msgs__msg__JointState *)msgin;
   
   if (msg->position.size > 0 && msg->name.size > 0) {
+    // Log once every few seconds to avoid serial flooding
+    static unsigned long last_msg_log = 0;
+    bool should_log = (millis() - last_msg_log > 2000);
+    if(should_log) {
+        Serial.printf("Recv JointState with %d joints\n", msg->name.size);
+        last_msg_log = millis();
+    }
+
     for (size_t i = 0; i < msg->name.size; i++) {
       // Find which physical pin this joint string corresponds to
       for (int j = 0; j < 12; j++) {
         if (strcmp(msg->name.data[i].data, joint_mapping[j].name) == 0) {
-          // 1. Subtract the calibration offset to zero the physical leg
-          float corrected_angle_rad = msg->position.data[i] - joint_offsets[joint_mapping[j].offset_index];
+          int base_tick = radToPwmTick(msg->position.data[i]);
+          int calibrated_tick = base_tick + (joint_offsets[joint_mapping[j].offset_index] - 307);
+          int final_tick = max(joint_min_pwm[joint_mapping[j].offset_index], 
+                           min(joint_max_pwm[joint_mapping[j].offset_index], calibrated_tick));
           
-          // 2. Convert to PWM ticks
-          int pwm_tick = radToPwmTick(corrected_angle_rad);
+          pwm.setPWM(joint_mapping[j].pca_pin, 0, final_tick);
           
-          // 3. Send to specific PCA9685 pin
-          pwm.setPWM(joint_mapping[j].pca_pin, 0, pwm_tick);
-          break; // Found the match, move to next incoming joint
+          if(should_log && i == 0) {
+              Serial.printf("  Joint[0]: %s -> PWM: %d\n", joint_mapping[j].name, final_tick);
+          }
+          break;
         }
       }
     }
+  } else {
+      Serial.println("Received empty JointState!");
   }
 }
 
@@ -292,24 +315,24 @@ void setup() {
   // Pre-allocate memory for dynamic arrays to prevent deserialization crashes!
   joint_msg.name.capacity = 12;
   joint_msg.name.data = (rosidl_runtime_c__String *) malloc(12 * sizeof(rosidl_runtime_c__String));
-  joint_msg.name.size = 0;
+  joint_msg.name.size = 12; // Pre-set size so executor knows we expect 12
   for(int i = 0; i < 12; i++){
-      joint_msg.name.data[i].capacity = 50; 
-      joint_msg.name.data[i].data = (char *) malloc(50 * sizeof(char));
+      joint_msg.name.data[i].capacity = 32; // Reduced to save memory, safe for 26-char names
+      joint_msg.name.data[i].data = (char *) malloc(32 * sizeof(char));
       joint_msg.name.data[i].size = 0;
   }
 
   joint_msg.position.capacity = 12;
   joint_msg.position.data = (double*) malloc(12 * sizeof(double));
-  joint_msg.position.size = 0;
+  joint_msg.position.size = 12;
 
   joint_msg.velocity.capacity = 12;
   joint_msg.velocity.data = (double*) malloc(12 * sizeof(double));
-  joint_msg.velocity.size = 0;
+  joint_msg.velocity.size = 12;
 
   joint_msg.effort.capacity = 12;
   joint_msg.effort.data = (double*) malloc(12 * sizeof(double));
-  joint_msg.effort.size = 0;
+  joint_msg.effort.size = 12;
 
   // Create Executor (3 handles: 1 subscriber + 2 publishers but publishers don't need handles in the executor to spin, only subscribers/services/timers do )
   rclc_executor_init(&executor, &support.context, 1, &allocator);
@@ -317,6 +340,6 @@ void setup() {
 }
 
 void loop() {
-  // Keep the micro-ROS agent spinning to catch incoming CHAMP messages
-  rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
+  // Keep the micro-ROS agent spinning at a higher frequency to handle 250Hz joint updates
+  rclc_executor_spin_some(&executor, RCL_MS_TO_NS(1));
 }

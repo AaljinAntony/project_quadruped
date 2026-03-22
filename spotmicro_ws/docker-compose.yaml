@@ -27,4 +27,4 @@ services:
     # It allows the Agent to easily discover your ROS 2 container via DDS, 
     # and exposes port 8888 directly to your local Wi-Fi for the ESP32.
     network_mode: host 
-    command: udp4 --port 8888
+    command: udp4 --port 8888 -v 4 -m dds

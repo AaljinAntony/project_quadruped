@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     python3-vcstool \
     git \
     nano \
+    tree \
     ros-humble-gazebo-ros2-control \
     ros-humble-gazebo-ros-pkgs \
     ros-humble-xacro \

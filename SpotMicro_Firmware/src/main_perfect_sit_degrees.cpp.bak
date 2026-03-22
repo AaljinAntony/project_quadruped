@@ -20,13 +20,13 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
 #define SERVO_FREQ 50
 #define VOLTAGE_PIN 34
 
-// Verified Degree Offsets (Physically Calibrated for Hardware Asymmetry)
+// Verified Degree Offsets (calculated from raw PWM confirmed in AGENT_MEMORY.md)
 // Reference center is 307 PWM
 float joint_offsets_deg[12] = {
-  27.4, -7.5, -7.5,   // FL Foot, Leg, Shoulder
-  33.9, -9.5, -7.0,   // RL Foot, Leg, Shoulder
-  -38.9, -1.0, -0.5,  // FR Foot, Leg, Shoulder
-  -41.4, 9.0, 6.5     // RR Foot, Leg, Shoulder
+  27.9, -5.0, -5.5, // FL Foot, Leg, Shoulder
+  31.9, -9.5, -4.0, // RL Foot, Leg, Shoulder
+  -35.4, 4.5, 4.0,  // FR Foot, Leg, Shoulder
+  -30.9, 12.0, 9.5  // RR Foot, Leg, Shoulder
 };
 
 struct JointMap {
@@ -47,15 +47,6 @@ JointMap joint_mapping[12] = {
 const float TICKS_PER_DEG = 115.0 / 57.2958;
 const float TICKS_PER_RAD = 115.0;
 const int PWM_CENTER = 307;
-
-// --- TRANSITION GLOBALS ---
-float current_pwm[16];
-float target_pwm[16];
-float start_pwm_transition[16];
-unsigned long transition_start_time = 0;
-unsigned long last_transition_update = 0;
-bool is_transitioning = false;
-const float TRANSITION_DURATION_MS = 2000.0; // 2.0 seconds span
 
 // --- NETWORK CONFIGURATION ---
 char ssid[] = "SpotMicro";
@@ -99,18 +90,12 @@ float readVoltage() {
 }
 
 void set_pose(int pose_id) {
-    is_transitioning = true;
-    transition_start_time = millis();
-    for(int i=0; i<16; i++) {
-        start_pwm_transition[i] = current_pwm[i];
-    }
-
     if (pose_id == 0) { // Neutral (Hardware Center)
-        for(int i=0; i<16; i++) target_pwm[i] = PWM_CENTER;
+        for(int i=0; i<16; i++) pwm.setPWM(i, 0, PWM_CENTER);
     } else if (pose_id == 1) { // Calibrated Stand
         for(int i=0; i<12; i++) {
             int offset_pwm = PWM_CENTER + (int)(joint_offsets_deg[joint_mapping[i].offset_index] * TICKS_PER_DEG);
-            target_pwm[joint_mapping[i].pca_pin] = offset_pwm;
+            pwm.setPWM(joint_mapping[i].pca_pin, 0, offset_pwm);
         }
     } else if (pose_id == 2) { // Calibrated Sit (Legs up 30°, Feet in 30°)
         for(int i=0; i<12; i++) {
@@ -123,7 +108,7 @@ void set_pose(int pose_id) {
             if (type == 0) angle_deg -= (30.0 * dir); // Foot in
             
             int final_pwm = PWM_CENTER + (int)(angle_deg * TICKS_PER_DEG);
-            target_pwm[joint_mapping[i].pca_pin] = final_pwm;
+            pwm.setPWM(joint_mapping[i].pca_pin, 0, final_pwm);
         }
     }
 }
@@ -141,8 +126,6 @@ void joint_callback(const void * msgin) {
                 
                 int final_tick = PWM_CENTER + (int)(final_angle_deg * TICKS_PER_DEG);
                 pwm.setPWM(joint_mapping[j].pca_pin, 0, final_tick);
-                current_pwm[joint_mapping[j].pca_pin] = final_tick;
-                is_transitioning = false; // Interrupted by active walking
 
                 // Log movement in absolute degrees
                 snprintf(status_buffer, sizeof(status_buffer), "MOVE: %s to %.1f°", joint_mapping[j].name, final_angle_deg);
@@ -174,8 +157,6 @@ void calib_callback(const void * msgin) {
         int pwm_val = msg->data.data[1];
         if (pin >= 0 && pin < 16) {
             pwm.setPWM(pin, 0, pwm_val);
-            current_pwm[pin] = pwm_val;
-            is_transitioning = false; // Interrupted by calibration override
             snprintf(status_buffer, sizeof(status_buffer), "Raw PWM: Pin %d -> %d", pin, pwm_val);
             status_msg.data.data = status_buffer;
             status_msg.data.size = strlen(status_buffer);
@@ -190,13 +171,7 @@ void setup() {
   pwm.setOscillatorFrequency(27000000);
   pwm.setPWMFreq(SERVO_FREQ);
 
-  for(int i=0; i<16; i++) {
-      current_pwm[i] = PWM_CENTER;
-      target_pwm[i] = PWM_CENTER;
-      start_pwm_transition[i] = PWM_CENTER;
-  }
-
-  // Default to Stand on power-up (transitions over 2s automatically)
+  // Default to Stand on power-up
   set_pose(1);
 
   WiFi.begin(ssid, psk);
@@ -241,34 +216,5 @@ void setup() {
 void loop() {
   if (WiFi.status() == WL_CONNECTED) {
     rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
-  }
-  
-  if (is_transitioning) {
-      unsigned long now = millis();
-      
-      // Update at max 50Hz (every 20ms) to prevent I2C bus flooding
-      if (now - last_transition_update >= 20) {
-          last_transition_update = now;
-          
-          float t = (now - transition_start_time) / TRANSITION_DURATION_MS;
-          if (t >= 1.0) {
-              t = 1.0;
-              is_transitioning = false;
-          }
-          
-          // Apply Smoothstep (Ease-in, Ease-out) formula for natural robotic motion
-          float progress = t * t * (3.0f - 2.0f * t);
-          
-          for(int i=0; i<12; i++) { 
-              int pin = joint_mapping[i].pca_pin;
-              int new_pwm = (int)(start_pwm_transition[pin] + (target_pwm[pin] - start_pwm_transition[pin]) * progress);
-              
-              // Only command the PCA9685 chip if the PWM value explicitly changed
-              if (new_pwm != (int)current_pwm[pin] || t >= 1.0) {
-                  current_pwm[pin] = new_pwm;
-                  pwm.setPWM(pin, 0, new_pwm);
-              }
-          }
-      }
   }
 }

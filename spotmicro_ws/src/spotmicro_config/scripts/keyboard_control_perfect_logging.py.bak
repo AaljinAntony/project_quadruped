@@ -76,18 +76,7 @@ def main():
                     print("\r\n--- CALIBRATION MODE ---")
                     try:
                         pin = int(input("Enter PCA Pin (0-15): "))
-                        val = input("Enter Degree Offset (e.g., 25.5) or strict PWM (100-500): ")
-                        
-                        if "." in val or "-" in val or "+" in val or (val.replace("-","").isdigit() and int(val) < 100):
-                            # It's a Degree input
-                            deg = float(val)
-                            TICKS_PER_DEG = 115.0 / 57.2958
-                            pwm = int(307 + (deg * TICKS_PER_DEG))
-                            print(f"Calculated PWM from {deg}° = {pwm} ticks")
-                        else:
-                            # It's a raw PWM input
-                            pwm = int(val)
-                            
+                        pwm = int(input("Enter PWM Ticks (100-500): "))
                         msg = Int32MultiArray()
                         msg.data = [pin, pwm]
                         node.calib_pub.publish(msg)

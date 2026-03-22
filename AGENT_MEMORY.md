@@ -36,27 +36,29 @@
 - **Micro-ROS Agent Connection**: Requires `network_mode: host` in `docker-compose.yaml`.
 - **ESP32 Serial Monitor**: After initialization, `main.cpp` enters a loop waiting for ROS 2 messages. It will NOT print anything to the serial monitor unless there's an error or a specific print statement is triggered.
 ### Motor Control & Calibration (New Hardware Mapping)
-### 🦴 Calibration Status: PHYSICAL NEUTRAL VERIFIED (March 16, 2024)
-The robot is confirmed stable in its standing pose using the following hardcoded offsets in the `stand_neutral.cpp` test firmware. 0.0 radians in ROS 2 now perfectly maps to these hardware-safe center points.
+**Verified Offsets Table (Reference Center: 307 PWM):**
+| Joint | PCA Pin | PWM Neutral | Degree Offset (Approx) |
+|---|---|---|---|
+| FL Foot | 0 | 362 | **+27.4°** |
+| FL Leg | 1 | 292 | **-7.5°** |
+| FL Shoulder | 2 | 292 | **-7.5°** |
+| RL Foot | 4 | 375 | **+33.9°** |
+| RL Leg | 5 | 288 | **-9.5°** |
+| RL Shoulder | 6 | 293 | **-7.0°** |
+| FR Foot | 8 | 229 | **-38.9°** |
+| FR Leg | 9 | 305 | **-1.0°** |
+| FR Shoulder | 10 | 306 | **-0.5°** |
+| RR Foot | 12 | 224 | **-41.4°** |
+| RR Leg | 13 | 325 | **+9.0°** |
+| RR Shoulder | 14 | 320 | **+6.5°** |
 
-**Verified Offsets Table:**
-| Joint | PCA Pin | PWM Neutral |
-|---|---|---|
-| FL Foot | 0 | 363 |
-| FL Leg | 1 | 297 |
-| FL Shoulder | 2 | 296 |
-| RL Foot | 4 | 371 |
-| RL Leg | 5 | 288 |
-| RL Shoulder | 6 | 299 |
-| FR Foot | 8 | 236 |
-| FR Leg | 9 | 316 |
-| FR Shoulder | 10 | 315 |
-| RR Foot | 12 | 245 |
-| RR Leg | 13 | 331 |
-| RR Shoulder | 14 | 326 |
+- **Verification Logic**: 115 ticks per Rad = ~2.01 ticks per Degree. 
+- **Mirroring Logic**: Left side (Idx 0-5) positive angle is PWM increase. Right side (Idx 6-11) positive angle is PWM decrease.
+- **Physical vs Mathematical Asymmetry**: While mathematically averaging left/right yielded symmetrical angles naturally in code, the physical hardware of the limbs required completely custom baselines tuned leg-by-leg to achieve physical standing symmetry.
 
 - **Control Strategy**: 
   - Host-side Python CLI (`scripts/motor_calibration_cli.py`) sends raw PWM ticks (approx 100-500).
+  - **Pose Transitions**: Firmware implements 2-second linear interpolation (`is_transitioning`) for macroscopic stance shifts (Sit/Stand/Neutral) to prevent instantaneous hardware jerking. Active walking or direct micro-ROS commands automatically interrupt and override this smoothing to maintain low latency.
   - **Baseline**: Script resets to **300 PWM** on motor switch.
   - **Logging**: Interactive results are logged to `/workspace/calibration_results.txt` for automated extraction.
   - **Human Readability**: Script now logs **Approximate Degrees** alongside PWM (`deg = (PWM * 4.8828 - 1500) * 0.09`).

@@ -26,3 +26,12 @@
 ### `SpotMicro_Firmware/src/main.cpp.normal`
 - **Purpose**: Stable production firmware for CHAMP control.
 - **Key Responsibilities**: Receives joint positions and performs the inverse kinematics/mapping for production walking.
+### `spotmicro_ws/start.bat` [NEW]
+- **Purpose**: Batch script for Windows users to launch the Docker environment.
+- **Key Responsibilities**: Checks for Docker and runs `docker compose up -d`. Notes WSLg support for GUIs.
+- **Dependencies**: Docker Desktop.
+
+### `spotmicro_ws/prerequisites.ps1` [NEW]
+- **Purpose**: PowerShell script to automate prerequisite checks on Windows.
+- **Key Responsibilities**: Verifies Administrator privileges, WSL 2 installation, Docker Desktop, and NVIDIA drivers. Provides `winget` installation tips.
+- **Dependencies**: PowerShell (Admin).

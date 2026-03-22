@@ -13,6 +13,7 @@
 ## Constraints & Assumptions
 - The physical robot's servos (DS3235) have safe pulse width limits of 500us to 2500us.
 - Host machine must support Docker, Docker Compose, and NVIDIA Container Toolkit for full simulation capabilities.
+- **Windows Support**: Added `start.bat` and `prerequisites.ps1` for Windows 10/11 users (WSL 2 / WSLg required for GUI).
 - The `SpotMicro_Firmware/src/main.cpp` requires hardcoded Wi-Fi credentials (`ssid`, `psk`) and the Host's IP (`agent_ip`) to communicate with the Micro-ROS Agent.
 
 - **Network Isolation Discovery**: Initial failures were caused by host firewall (`ufw`) and router "AP Isolation". Switching to a laptop-hosted hotspot (`SpotMicro`) resolved the link-layer reachability issues. (2026-03-15)

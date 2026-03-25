@@ -66,6 +66,14 @@
   - **Reliability**: CLI handles `Ctrl+C` for clean exits and terminal restoration.
   - ESP32 provides feedback on `/motor_status` including battery voltage.
 
+### 🏆 Milestone: Stable Walking Achieved (2026-03-25)
+- **Status**: SUCCESS ✅
+- **Details**: The robot now achieves a stable Trot gait using a unified controller architecture.
+- **Firmware**: `SpotMicro_Firmware/src/main.cpp` contains the production stance control with hardcoded physical offsets.
+- **Controller**: `spotmicro_ws/src/spotmicro_config/scripts/spotmicro_unified_controller.py` implements the high-level IK and gait phases.
+- **Backup**: Created `main.cpp.stable_walking` and `spotmicro_unified_controller.py.stable_walking` for safe restoration.
+- **Confirmation**: Physical walking performance verified. Offsets are validated leg-by-leg.
+
 ### Known Issues & Unresolved Questions
 - **Battery Sense**: ADC pin used for voltage sensing might need specific calibration for the user's divider ratio.
 - **CHAMP Alignment**: Once calibration is done, the offsets must be transferred to the production `main.cpp`.

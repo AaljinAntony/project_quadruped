@@ -14,10 +14,15 @@
 - **Key Responsibilities**: Outlines the 20 specialist agents, 36 modular skills, 11 slash command workflows, and master validation scripts. Explains the agent routing and skill loading mechanisms.
 - **Dependencies**: N/A.
 
-### `SpotMicro_Firmware/src/main.cpp` (Calibration Active)
-- **Purpose**: Currently holds the calibration firmware for tuning servos.
-- **Key Responsibilities**: Receives PWM ticks over `/motor_calibration` and drives PCA9685 pins.
-- **Mapping**: Matches the user-provided CH 0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14 structure.
+### `SpotMicro_Firmware/src/main.cpp`
+- **Purpose**: Production firmware for unified stance and walking control.
+- **Key Responsibilities**: Manages micro-ROS communication, implements smooth-step stance transitions, and provides direct joint control with integrated physical offsets (calibrated for hardware asymmetry).
+- **Mapping**: Matches the 12-motor PCA9685 configuration.
+
+### `spotmicro_ws/src/spotmicro_config/scripts/spotmicro_unified_controller.py`
+- **Purpose**: Unified IK and Trot gait controller (Python/ROS 2).
+- **Key Responsibilities**: Solves 2D planar IK, manages gait timing (75% stance, 25% swing), and provides keyboard-driven state transitions (Sit, Stand, Trot).
+- **Dependencies**: `rclpy`, `sensor_msgs`.
 
 ### `spotmicro_ws/src/spotmicro_config/scripts/motor_calibration_cli.py`
 - **Purpose**: Interactive CLI for motor calibration with persistence.

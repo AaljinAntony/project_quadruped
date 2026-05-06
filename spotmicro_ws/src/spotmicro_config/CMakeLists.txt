@@ -9,7 +9,7 @@ install(
 )
 
 install(PROGRAMS
-  scripts/invert_vel.py
+  scripts/spotmicro_unified_controller.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
